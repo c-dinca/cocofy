@@ -1,0 +1,17 @@
+version: "3"
+services:
+  cocofy:
+    build: .
+    container_name: cocofy
+    ports:
+      - "8888:8888"
+    environment:
+      - MUSIC_DIR=/music
+      - CACHE_DIR=/cache
+    volumes:
+      - /DATA/Media/Music:/music
+      - cocofy-cache:/cache
+    restart: unless-stopped
+
+volumes:
+  cocofy-cache:
