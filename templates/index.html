@@ -529,7 +529,7 @@ html,body{height:100%;font-family:'DM Sans',system-ui,-apple-system,sans-serif;b
 </div>
 
 <div class="toast-container" id="toastContainer"></div>
-<audio id="audioPlayer" preload="auto"></audio>
+<audio id="audioPlayer" preload="auto" playsinline webkit-playsinline></audio>
 <audio id="preloadAudio" preload="auto" style="display:none"></audio>
 
 <script>
@@ -654,6 +654,21 @@ function updateAmbient(c) {
   nowPlaying.style.setProperty('--np-color', rgba(0.2));
 }
 
+// ═══════════════════ MEDIA SESSION ═══════════════════
+function updateMediaSession(song, coverSrc) {
+  if (!('mediaSession' in navigator)) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: song.title || '—',
+    artist: song.artist || '—',
+    album: 'Cocofy',
+    artwork: coverSrc ? [
+      { src: coverSrc, sizes: '96x96', type: 'image/jpeg' },
+      { src: coverSrc, sizes: '256x256', type: 'image/jpeg' },
+      { src: coverSrc, sizes: '512x512', type: 'image/jpeg' },
+    ] : [],
+  });
+}
+
 // ═══════════════════ PLAY ═══════════════════
 async function playSong(index) {
   const song = queue[index]; if (!song) return;
@@ -667,6 +682,7 @@ async function playSong(index) {
 
   if (alreadyDownloaded || !song.url) {
     const coverUrl = `/api/cover/${song.id}`;
+    updateMediaSession(song, coverUrl);
     fetch(coverUrl).then(r => { if (r.ok) { cover.innerHTML = `<img src="${coverUrl}" alt="">`; setNpArt(coverUrl); extractColor(coverUrl).then(updateAmbient); } else { cover.innerHTML = '♪'; setNpArt(null); }}).catch(() => { cover.innerHTML = '♪'; setNpArt(null); });
     try {
       audio.src = `/api/stream/${song.id}`; audio.load(); await audio.play();
@@ -696,7 +712,9 @@ async function playSong(index) {
     if (!dlRes.ok) throw new Error(dlData.detail || 'Download failed');
     audio.src = `/api/stream/${song.id}`; audio.load(); await audio.play();
     showPlayState(); showToast(`Now playing: ${song.title}`);
-    fetch(`/api/cover/${song.id}`).then(r => { if (r.ok) { const u = `/api/cover/${song.id}`; cover.innerHTML = `<img src="${u}" alt="">`; setNpArt(u); extractColor(u).then(updateAmbient); }}).catch(()=>{});
+    const coverUrl = `/api/cover/${song.id}`;
+    updateMediaSession(song, coverUrl);
+    fetch(coverUrl).then(r => { if (r.ok) { cover.innerHTML = `<img src="${coverUrl}" alt="">`; setNpArt(coverUrl); extractColor(coverUrl).then(updateAmbient); }}).catch(()=>{});
     addToRecent(song); loadLibrary(); preloadNext();
   } catch (err) { clearInterval(progressPoll); showToast(`Error: ${err.message}`); }
   if (card) card.classList.remove('downloading');
@@ -712,6 +730,7 @@ async function playFromLibrary(vid) {
   $('playerTitle').textContent = song.title; $('playerArtist').textContent = song.artist;
   updateNpInfo(song); updateFavUI();
   const cover = $('playerCover'), coverUrl = `/api/cover/${song.id}`;
+  updateMediaSession(song, coverUrl);
   fetch(coverUrl).then(r => { if (r.ok) { cover.innerHTML = `<img src="${coverUrl}" alt="">`; setNpArt(coverUrl); extractColor(coverUrl).then(updateAmbient); } else { cover.innerHTML = '♪'; setNpArt(null); }}).catch(() => { cover.innerHTML = '♪'; setNpArt(null); });
   audio.src = `/api/stream/${song.id}`; audio.load(); await audio.play();
   showPlayState(); addToRecent(song); updateLibraryUI(); updateQueueUI(); preloadNext();
@@ -747,6 +766,9 @@ audio.addEventListener('timeupdate', () => {
   $('progressFill').style.width = p+'%'; $('npProgressFill').style.width = p+'%';
   $('currentTime').textContent = fmtTime(audio.currentTime); $('totalTime').textContent = fmtTime(audio.duration);
   $('npCurrentTime').textContent = fmtTime(audio.currentTime); $('npTotalTime').textContent = fmtTime(audio.duration);
+  if ('mediaSession' in navigator) {
+    try { navigator.mediaSession.setPositionState({ duration: audio.duration, playbackRate: audio.playbackRate, position: audio.currentTime }); } catch {}
+  }
 });
 audio.addEventListener('ended', () => { showPauseState(); nextSong(); });
 audio.addEventListener('pause', showPauseState);
@@ -1164,6 +1186,17 @@ document.addEventListener('keydown', e => {
     case 'Escape': if(npOpen) closeNp(); else if($('queuePanel').classList.contains('open')) $('queuePanel').classList.remove('open'); else hideModal(); break;
   }
 });
+
+// ═══════════════════ MEDIA SESSION HANDLERS ═══════════════════
+if ('mediaSession' in navigator) {
+  navigator.mediaSession.setActionHandler('play', () => { audio.play(); });
+  navigator.mediaSession.setActionHandler('pause', () => { audio.pause(); });
+  navigator.mediaSession.setActionHandler('previoustrack', () => { prevSong(); });
+  navigator.mediaSession.setActionHandler('nexttrack', () => { nextSong(); });
+  navigator.mediaSession.setActionHandler('seekto', d => { if (d.seekTime != null) audio.currentTime = d.seekTime; });
+  navigator.mediaSession.setActionHandler('seekbackward', d => { audio.currentTime = Math.max(0, audio.currentTime - (d.seekOffset || 10)); });
+  navigator.mediaSession.setActionHandler('seekforward', d => { audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + (d.seekOffset || 10)); });
+}
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
 if ('serviceWorker' in navigator) {

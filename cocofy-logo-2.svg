@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1db954"/>
+      <stop offset="100%" style="stop-color:#1ed760"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="#0a0a0a"/>
+
+  <!-- Vinyl disc -->
+  <circle cx="256" cy="232" r="120" fill="none" stroke="#222" stroke-width="1.5"/>
+  <circle cx="256" cy="232" r="90" fill="none" stroke="#1a1a1a" stroke-width="0.8"/>
+  <circle cx="256" cy="232" r="60" fill="none" stroke="#1a1a1a" stroke-width="0.8"/>
+  <circle cx="256" cy="232" r="30" fill="url(#g)"/>
+  <circle cx="256" cy="232" r="5" fill="#0a0a0a"/>
+
+  <!-- Sound waves -->
+  <g stroke="url(#g)" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.8">
+    <path d="M340,200 Q360,232 340,264"/>
+    <path d="M358,185 Q385,232 358,279" opacity="0.5"/>
+    <path d="M376,170 Q410,232 376,294" opacity="0.25"/>
+  </g>
+
+  <!-- Text -->
+  <text x="256" y="410" text-anchor="middle" font-family="'SF Pro Display','Helvetica Neue',sans-serif" font-size="52" font-weight="700" letter-spacing="3">
+    <tspan fill="url(#g)">Coco</tspan><tspan fill="#f0f0f0">fy</tspan>
+  </text>
+</svg>
