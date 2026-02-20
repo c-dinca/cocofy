@@ -5,3 +5,4 @@ echo "__pycache__/
 start.sh
 rules.md
 .venv/
+.history/
