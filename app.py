@@ -4,16 +4,19 @@ import asyncio
 import glob
 import re
 import sqlite3
+import time
 import urllib.request
 import urllib.parse
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, Response
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.gzip import GZipMiddleware
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, APIC
 import io
 
 app = FastAPI(title="Cocofy")
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 MUSIC_DIR = os.environ.get("MUSIC_DIR", "/music")
 CACHE_DIR = os.environ.get("CACHE_DIR", "/cache")
@@ -24,6 +27,8 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 templates = Jinja2Templates(directory="templates")
 
 download_progress: dict[str, float] = {}
+search_cache: dict[str, dict] = {}
+SEARCH_CACHE_TTL = 300
 
 
 # ── DATABASE ──────────────────────────────────────────────
@@ -126,6 +131,59 @@ async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+@app.get("/sw.js")
+async def service_worker():
+    sw = """
+const CACHE='cocofy-v2';
+const PRECACHE=['/','/health'];
+
+self.addEventListener('install',e=>{
+  e.waitUntil(caches.open(CACHE).then(c=>c.addAll(PRECACHE)).then(()=>self.skipWaiting()));
+});
+
+self.addEventListener('activate',e=>{
+  e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
+});
+
+self.addEventListener('fetch',e=>{
+  const url=new URL(e.request.url);
+  if(e.request.method!=='GET')return;
+  if(url.pathname.startsWith('/api/stream')||url.pathname.startsWith('/api/download'))return;
+
+  if(url.pathname.startsWith('/api/cover')){
+    e.respondWith(caches.open(CACHE).then(c=>c.match(e.request).then(r=>{
+      if(r)return r;
+      return fetch(e.request).then(resp=>{if(resp.ok)c.put(e.request,resp.clone());return resp}).catch(()=>new Response('',{status:404}));
+    })));
+    return;
+  }
+
+  if(url.origin.includes('fonts.googleapis')||url.origin.includes('fonts.gstatic')){
+    e.respondWith(caches.open(CACHE).then(c=>c.match(e.request).then(r=>{
+      if(r)return r;
+      return fetch(e.request).then(resp=>{if(resp.ok)c.put(e.request,resp.clone());return resp});
+    })));
+    return;
+  }
+
+  if(url.pathname==='/'||url.pathname.startsWith('/api/')){
+    e.respondWith(fetch(e.request).then(resp=>{
+      if(resp.ok){const cl=resp.clone();caches.open(CACHE).then(c=>c.put(e.request,cl));}
+      return resp;
+    }).catch(()=>caches.match(e.request)));
+    return;
+  }
+});
+"""
+    return Response(content=sw, media_type="application/javascript",
+                    headers={"Cache-Control": "no-cache"})
+
+
 # ── SEARCH ────────────────────────────────────────────────
 
 @app.get("/api/search")
@@ -144,6 +202,11 @@ async def search(q: str):
         conn.close()
     except Exception:
         pass
+
+    cache_key = q.strip().lower()
+    cached = search_cache.get(cache_key)
+    if cached and time.time() - cached["ts"] < SEARCH_CACHE_TTL:
+        return {"results": cached["results"]}
 
     try:
         cmd = [
@@ -179,6 +242,11 @@ async def search(q: str):
                 })
             except json.JSONDecodeError:
                 continue
+
+        search_cache[cache_key] = {"results": results, "ts": time.time()}
+        if len(search_cache) > 100:
+            oldest = min(search_cache, key=lambda k: search_cache[k]["ts"])
+            search_cache.pop(oldest, None)
 
         return {"results": results}
     except Exception as e:
@@ -286,14 +354,49 @@ async def get_download_progress(video_id: str):
 # ── STREAM & COVER ────────────────────────────────────────
 
 @app.get("/api/stream/{video_id}")
-async def stream(video_id: str):
+async def stream(video_id: str, request: Request):
     filepath = find_downloaded(video_id)
     if not filepath or not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Song not found")
+
+    file_size = os.path.getsize(filepath)
+    range_header = request.headers.get("range")
+
+    if range_header:
+        m = re.match(r"bytes=(\d+)-(\d*)", range_header)
+        if m:
+            start = int(m.group(1))
+            end = int(m.group(2)) if m.group(2) else file_size - 1
+            end = min(end, file_size - 1)
+            length = end - start + 1
+
+            def iter_range():
+                with open(filepath, "rb") as f:
+                    f.seek(start)
+                    remaining = length
+                    while remaining > 0:
+                        chunk = f.read(min(65536, remaining))
+                        if not chunk:
+                            break
+                        remaining -= len(chunk)
+                        yield chunk
+
+            return StreamingResponse(
+                iter_range(),
+                status_code=206,
+                media_type="audio/mpeg",
+                headers={
+                    "Content-Range": f"bytes {start}-{end}/{file_size}",
+                    "Content-Length": str(length),
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "public, max-age=86400",
+                },
+            )
+
     return FileResponse(
         filepath,
         media_type="audio/mpeg",
-        headers={"Accept-Ranges": "bytes"},
+        headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=86400"},
     )
 
 
@@ -310,6 +413,7 @@ async def cover(video_id: str):
                 return StreamingResponse(
                     io.BytesIO(tag.data),
                     media_type=tag.mime or "image/jpeg",
+                    headers={"Cache-Control": "public, max-age=604800"},
                 )
     except Exception:
         pass

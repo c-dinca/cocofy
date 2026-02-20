@@ -992,7 +992,7 @@ function updateLibraryUI() {
     const pl = currentSong && currentSong.id === song.id && !audio.paused;
     const fav = favorites.has(song.id);
     return `<div class="library-item ${pl?'playing':''}" data-lib-id="${song.id}">
-      <div class="library-item-art">${pl?`<div class="now-playing-bars"><span></span><span></span><span></span><span></span></div>`:`<img src="/api/cover/${song.id}" alt="" onerror="this.parentElement.innerHTML='♪'">`}</div>
+      <div class="library-item-art">${pl?`<div class="now-playing-bars"><span></span><span></span><span></span><span></span></div>`:`<img src="/api/cover/${song.id}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='♪'">`}</div>
       <div class="library-item-info"><div class="library-item-title">${esc(song.title)}</div><div class="library-item-artist" data-artist="${esc(song.artist)}">${esc(song.artist)}</div></div>
       <div class="library-item-actions">
         <button class="lib-action-btn playlist-btn" data-addpl-id="${song.id}" title="Add to playlist"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
@@ -1031,7 +1031,7 @@ function filterByArtist(artist) {
   list.innerHTML = `<div style="padding:8px 12px;margin-bottom:4px"><button class="lib-action-btn" id="clearArtistFilter" style="opacity:1;font-size:12px;padding:6px 12px;border-radius:6px;background:var(--bg-2);display:flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>Back</button></div>` +
     filtered.map(song => {
       const pl = currentSong && currentSong.id === song.id && !audio.paused;
-      return `<div class="library-item ${pl?'playing':''}" data-lib-id="${song.id}"><div class="library-item-art">${pl?`<div class="now-playing-bars"><span></span><span></span><span></span><span></span></div>`:`<img src="/api/cover/${song.id}" alt="" onerror="this.parentElement.innerHTML='♪'">`}</div><div class="library-item-info"><div class="library-item-title">${esc(song.title)}</div><div class="library-item-artist">${esc(song.artist)}</div></div></div>`;
+      return `<div class="library-item ${pl?'playing':''}" data-lib-id="${song.id}"><div class="library-item-art">${pl?`<div class="now-playing-bars"><span></span><span></span><span></span><span></span></div>`:`<img src="/api/cover/${song.id}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='♪'">`}</div><div class="library-item-info"><div class="library-item-title">${esc(song.title)}</div><div class="library-item-artist">${esc(song.artist)}</div></div></div>`;
     }).join('');
   $('clearArtistFilter')?.addEventListener('click', () => updateLibraryUI());
   list.querySelectorAll('[data-lib-id]').forEach(el => el.addEventListener('click', () => playFromLibrary(el.dataset.libId)));
@@ -1164,6 +1164,11 @@ document.addEventListener('keydown', e => {
     case 'Escape': if(npOpen) closeNp(); else if($('queuePanel').classList.contains('open')) $('queuePanel').classList.remove('open'); else hideModal(); break;
   }
 });
+
+// ═══════════════════ SERVICE WORKER ═══════════════════
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
 
 // ═══════════════════ INIT ═══════════════════
 loadLibrary();
