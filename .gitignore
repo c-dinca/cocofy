@@ -2,3 +2,6 @@ echo "__pycache__/
 *.pyc
 .env
 .DS_Store" > .gitignore.history/
+start.sh
+rules.md
+.venv/
